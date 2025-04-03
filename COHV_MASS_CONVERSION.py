@@ -10,7 +10,7 @@ import pyperclip
 import pandas as pd
 
 from sap_connection import get_last_session
-from sap_functions import open_one_transaction, simple_load_variant, select_rows_in_table
+from sap_functions import open_one_transaction, simple_load_variant, select_rows_in_table, get_sap_message
 from sap_transactions import cohv_mass_processing
 from other_functions import append_status_to_excel
 
@@ -76,9 +76,11 @@ if __name__ == "__main__":
         df = pd.DataFrame(result)
         df.to_excel(paths['converted_positions'])
 
+        total_gamng = int(pd.to_numeric(df['GAMNG'], errors='coerce').sum())
         program_status['COHV_CONVERSION_SUMMARY'] = (f"In total {df.shape[0]} rows converted. Total sum of converted "
-                                                     f"items: {int(df['GAMNG'].sum())}.")
+                                                     f"items: {total_gamng}.")
         program_status['COHV_CONVERSION_LINK'] = f"Details of converted items: {paths['converted_positions']}"
+        program_status['COHV_CONVERSION_SYSTEM_MESSAGE'] = get_sap_message(session=sess)
 
     except Exception as e:
         print(e)

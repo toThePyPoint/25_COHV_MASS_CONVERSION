@@ -199,7 +199,7 @@ def append_status_to_excel(status_file, status_dict, error_path, sheet_name):
         # Append the row and save the file
         wb.save(status_file)
 
-        print("Row added successfully to 'MRP_STOCKS'!")
+        print("Row added successfully to STATUS FILE!")
 
     except Exception as e:
         logging.error("Error occurred", exc_info=True)
