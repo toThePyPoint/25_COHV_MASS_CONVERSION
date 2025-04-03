@@ -12,6 +12,7 @@ import pandas as pd
 from sap_connection import get_last_session
 from sap_functions import open_one_transaction, simple_load_variant, select_rows_in_table
 from sap_transactions import cohv_mass_processing
+from other_functions import append_status_to_excel
 
 
 if __name__ == "__main__":
@@ -32,6 +33,10 @@ if __name__ == "__main__":
     ERROR_LOG_PATH = BASE_PATH / "error.log"
     COHV_TABLE_ID = "wnd[0]/usr/cntlCUSTOM/shellcont/shell/shellcont/shell"
     COHV_STOCK_COL_NAME = "LABST"
+
+    username = os.getlogin()
+    status_file = (f"C:/Users/{username}/OneDrive - Roto Frank DST/General/05_Automatyzacja_narzędzia/100_STATUS"
+                   f"/02_AUTOMATION_TOOLS_STATUS_BMH.xlsx")
 
     today = datetime.today().strftime("%Y_%m_%d")
     start_time = datetime.now().strftime("%H:%M:%S")
@@ -71,11 +76,17 @@ if __name__ == "__main__":
         df = pd.DataFrame(result)
         df.to_excel(paths['converted_positions'])
 
+        program_status['COHV_CONVERSION_SUMMARY'] = (f"In total {df.shape[0]} rows converted. Total sum of converted "
+                                                     f"items: {int(df['GAMNG'].sum())}.")
+        program_status['COHV_CONVERSION_LINK'] = f"Details of converted items: {paths['converted_positions']}"
+
     except Exception as e:
         print(e)
         logging.error("Error occurred", exc_info=True)
 
     finally:
-        # TODO: Fill status file
-        pass
-
+        # Fill status file
+        end_time = datetime.now().strftime("%H:%M:%S")
+        program_status['start_time'] = start_time
+        program_status['end_time'] = end_time
+        append_status_to_excel(status_file, program_status, ERROR_LOG_PATH, sheet_name="COHV_CONVERSION")
