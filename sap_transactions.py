@@ -198,15 +198,18 @@ def cohv_select_system_status(session, sys_status=1, selection_exclude=False, lo
         session.findById("wnd[0]").sendVKey(8)
 
 
-def cohv_mass_processing(session, type_of_operation):
+def cohv_mass_processing(session, type_of_operation, select_all=True):
     """
+    :param select_all: determines if all rows should be selected
     :param session:
-    :param type_of_operation: :str: "200" - orders confirmation, "130" - release orders
+    :param type_of_operation: :str: "200" - orders confirmation, "130" - release orders, "210" - convert PlOrd To PrdOrd
     :return:
     """
-    session.findById("wnd[0]/usr/cntlCUSTOM/shellcont/shell/shellcont/shell").setCurrentCell(-1, "")
-    session.findById("wnd[0]/usr/cntlCUSTOM/shellcont/shell/shellcont/shell").selectAll()
+    if select_all:
+        session.findById("wnd[0]/usr/cntlCUSTOM/shellcont/shell/shellcont/shell").setCurrentCell(-1, "")
+        session.findById("wnd[0]/usr/cntlCUSTOM/shellcont/shell/shellcont/shell").selectAll()
     session.findById("wnd[0]/mbar/menu[4]/menu[1]").select()
+
     session.findById("wnd[1]/usr/subFUNCTION_SETUP:SAPLCOWORK:0200/cmbCOWORK_FCT_SETUP-FUNCT").key = type_of_operation
     session.findById("wnd[1]/tbar[0]/btn[8]").press()
 

@@ -214,3 +214,60 @@ def get_sap_message(session):
     except Exception as e:
         print(f"Error retrieving SAP message: {e}")
         return None  # Return None if there's an error
+
+
+def select_rows_in_table(transaction, num_of_window, table_id, condition_column_name, result_column_names, session=None):
+    """
+    Selects rows in table which meets the following condition: 'quantity of pcs on the stock equals to 0'
+    :param result_column_names: list of columns values of which we want to get back as a result
+    :param transaction: SAP transaction
+    :param num_of_window: number of SAP window
+    :param table_id: table id
+    :param condition_column_name: column with data to be compared
+    :param session: SAP session
+    :return:
+    """
+    if not session:
+        obj_sess = get_client(num_of_window, transaction)
+    else:
+        obj_sess = session
+
+    rows_to_select = []
+    result_dict = {}
+
+    table = obj_sess.findById(table_id)
+    row_count = table.RowCount
+    visible_rows = table.VisibleRowCount
+
+    # retrieved_values = dict()
+    # idx = 0
+
+    current_row = 0
+    while current_row < row_count:
+        # Set the first visible row to the current row index
+        table.firstVisibleRow = current_row
+
+        # Read rows currently visible
+        for i in range(visible_rows):
+            if current_row + i == row_count:
+                break
+
+            # stock can be an empty string in the last row (row with total sum at the bottom of the table)
+            stock = table.GetCellValue(current_row + i, condition_column_name)
+            if stock != '':
+                stock_quantity = int(table.GetCellValue(current_row + i, condition_column_name))
+                if stock_quantity == 0:
+                    rows_to_select.append(i + current_row)
+
+                    # Get data from specified columns from rows which will be selected
+                    for col in result_column_names:
+                        table_value = table.GetCellValue(current_row + i, col)
+                        result_dict.setdefault(col, []).append(table_value)
+
+        # Scroll down
+        current_row += visible_rows
+
+    rows_to_select = ",".join(map(str, rows_to_select))
+    table.selectedRows = rows_to_select
+
+    return result_dict
