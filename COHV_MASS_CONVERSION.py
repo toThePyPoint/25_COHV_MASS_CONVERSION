@@ -168,7 +168,9 @@ if __name__ == "__main__":
         format="%(asctime)s - %(levelname)s - %(message)s",
     )
 
-    queue = multiprocessing.Queue()  # Create a shared queue
+    # queue = multiprocessing.Queue()  # Create a shared queue
+    manager = multiprocessing.Manager()
+    queue = manager.Queue()
     processes = []
 
     try:
