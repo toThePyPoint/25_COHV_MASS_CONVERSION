@@ -216,16 +216,16 @@ def get_sap_message(session):
         return None  # Return None if there's an error
 
 
-def select_rows_in_table(transaction, num_of_window, table_id, condition_column_name, result_column_names, session=None):
+def select_rows_in_table(transaction, num_of_window, table_id, cohv_logic_factors, cohv_main_logic_func, result_column_names, session=None):
     """
     Selects rows in table which meets the following condition: 'quantity of pcs on the stock equals to 0'
     :param result_column_names: list of columns values of which we want to get back as a result
     :param transaction: SAP transaction
     :param num_of_window: number of SAP window
     :param table_id: table id
-    :param condition_column_name: column with data to be compared
+    :param cohv_logic_factors: {COL_NAME: logic_function} dictionary with logic for COHV orders selection
     :param session: SAP session
-    :return:
+    :return: dictionary with three keys: {'selected_orders': dict, 'skipped_orders': dict, 'sap_message': str}
     """
     if not session:
         obj_sess = get_client(num_of_window, transaction)
@@ -233,7 +233,9 @@ def select_rows_in_table(transaction, num_of_window, table_id, condition_column_
         obj_sess = session
 
     rows_to_select = []
-    result_dict = {}
+    selected_orders = dict()
+    skipped_orders = dict()
+    result = dict()
 
     table = obj_sess.findById(table_id)
     row_count = table.RowCount
@@ -253,16 +255,29 @@ def select_rows_in_table(transaction, num_of_window, table_id, condition_column_
                 break
 
             # stock can be an empty string in the last row (row with total sum at the bottom of the table)
-            stock = table.GetCellValue(current_row + i, condition_column_name)
-            if stock != '':
-                stock_quantity = int(table.GetCellValue(current_row + i, condition_column_name))
-                if stock_quantity == 0:
+            not_empty_columns = list(cohv_logic_factors.keys())
+            not_empty_columns.remove('FEVOR')   # Prod planner can be an empty string, so I exclude this column
+            not_empty = [True if table.GetCellValue(current_row + i, key) != '' else False for key in not_empty_columns]
+            not_empty = all(not_empty)
+            if not_empty:
+                # stock_quantity = int(table.GetCellValue(current_row + i, cohv_logic))
+                logic_params = dict()
+                for key, func in cohv_logic_factors.items():
+                    col_value = table.GetCellValue(current_row + i, key)
+                    logic_params[key + "_" + func.__name__] = func(col_value)
+                if cohv_main_logic_func(logic_params):
+                    # to be selected
                     rows_to_select.append(i + current_row)
 
                     # Get data from specified columns from rows which will be selected
                     for col in result_column_names:
                         table_value = table.GetCellValue(current_row + i, col)
-                        result_dict.setdefault(col, []).append(table_value)
+                        selected_orders.setdefault(col, []).append(table_value)
+                else:
+                    # to be skipped
+                    for col in result_column_names:
+                        table_value = table.GetCellValue(current_row + i, col)
+                        skipped_orders.setdefault(col, []).append(table_value)
 
         # Scroll down
         current_row += visible_rows
@@ -270,4 +285,10 @@ def select_rows_in_table(transaction, num_of_window, table_id, condition_column_
     rows_to_select = ",".join(map(str, rows_to_select))
     table.selectedRows = rows_to_select
 
-    return result_dict
+    # Handle output information
+    sap_msg = get_sap_message(obj_sess)
+    result['selected_orders'] = selected_orders
+    result['skipped_orders'] = skipped_orders
+    result['sap_message'] = sap_msg
+
+    return result
