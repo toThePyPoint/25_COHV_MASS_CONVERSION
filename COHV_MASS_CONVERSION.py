@@ -11,19 +11,31 @@ from itertools import cycle
 import pandas as pd
 
 from sap_connection import get_last_session, get_client
-from sap_functions import open_one_transaction, simple_load_variant, select_rows_in_table, insert_production_orders, sap_element_exists
+from sap_functions import (
+    open_one_transaction,
+    simple_load_variant,
+    select_rows_in_table,
+    insert_production_orders,
+    sap_element_exists,
+)
 from sap_transactions import cohv_mass_processing, partial_matching
 from other_functions import append_status_to_excel
 
-# TODO: Check if it works with more than three variants - tutaj jeszcze są błędy, sprawdzić
-# TODO: Check if it works when there is no data in some variant
 
 # VARIANT_NAMES = ["PLAUF_M_BESTAN", "ZZ_AUTO_PO1", "ZZ_AUTO_PO2", "ZZ_AUTO_PO3"]  # Change variants here if necessary
-# VARIANT_NAMES = ["ZZ_AUTO_PO4", "ZZ_AUTO_PO5", "ZZ_AUTO_PO6", "ZZ_AUTO_PO7", "ZZ_AUTO_PO8"]  # Change variants here if necessary
-VARIANT_NAMES = ["ZZ_AUTO_PO4", "ZZ_AUTO_PO5", "ZZ_AUTO_PO7"]  # Change variants here if necessary
+VARIANT_NAMES = [
+    "ZZ_AUTO_PO8",
+    "ZZ_AUTO_PO5",
+    "ZZ_AUTO_PO6",
+    "ZZ_AUTO_PO7",
+    "ZZ_AUTO_PO4",
+]  # Change variants here if necessary
+# VARIANT_NAMES = ["ZZ_AUTO_PO4", "ZZ_AUTO_PO5", "ZZ_AUTO_PO7"]  # Change variants here if necessary
 # VARIANT_NAMES = ["ZZ_AUTO_PO7"]  # Change variants here if necessary
 
-BASE_PATH = Path(r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\04_COHV_MASS_CONVERSION")
+BASE_PATH = Path(
+    r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\04_COHV_MASS_CONVERSION"
+)
 ERROR_LOG_PATH = BASE_PATH / "error.log"
 
 RESULT_COL_NAMES = [
@@ -35,7 +47,7 @@ RESULT_COL_NAMES = [
     "GAMNG",
     "GSTRS",
     "LABST",
-    "FEVOR"
+    "FEVOR",
 ]
 
 
@@ -59,14 +71,14 @@ def is_one(value):
 
 def is_configurated(value: str):
     # it's configurated
-    if value.startswith('99'):
+    if value.startswith("99"):
         return True
     else:
         return False
 
 
 def is_9H(value: str):
-    if '9H' in value:
+    if "9H" in value:
         return True
     else:
         return False
@@ -91,20 +103,24 @@ def main_cohv_logic_function(logic_parameters):
     """
     factors = dict()
 
-    if logic_parameters['FEVOR_is_csr'] and not logic_parameters['LABST_is_zero']:
-        factors['condition1'] = False
+    if logic_parameters["FEVOR_is_csr"] and not logic_parameters["LABST_is_zero"]:
+        factors["condition1"] = False
     else:
-        factors['condition1'] = True
+        factors["condition1"] = True
 
-    if logic_parameters['MATNR_is_configurated'] or logic_parameters['LABST_is_zero']:
-        factors['condition2'] = True
+    if logic_parameters["MATNR_is_configurated"] or logic_parameters["LABST_is_zero"]:
+        factors["condition2"] = True
     else:
-        factors['condition2'] = False
+        factors["condition2"] = False
 
-    if logic_parameters['MATXT_is_9H'] and logic_parameters['MATNR_is_configurated'] and not logic_parameters['GAMNG_is_one']:
-        factors['condition3'] = False
+    if (
+        logic_parameters["MATXT_is_9H"]
+        and logic_parameters["MATNR_is_configurated"]
+        and not logic_parameters["GAMNG_is_one"]
+    ):
+        factors["condition3"] = False
     else:
-        factors['condition3'] = True
+        factors["condition3"] = True
 
     result = all(factors.values())
     return result
@@ -129,25 +145,47 @@ def select_and_convert(q, s_num, transaction, variant_name):
         q.put((variant_name, sap_result))
         return
 
-    cohv_logic_factors = {"LABST": is_zero, "GAMNG": is_one, "MATNR": is_configurated, "MATXT": is_9H,
-                          "FEVOR": is_csr}
+    cohv_logic_factors = {
+        "LABST": is_zero,
+        "GAMNG": is_one,
+        "MATNR": is_configurated,
+        "MATXT": is_9H,
+        "FEVOR": is_csr,
+    }
 
     cohv_table_id = "wnd[0]/usr/cntlCUSTOM/shellcont/shell/shellcont/shell"
 
     # Format of the result: {'selected_orders': dict, 'skipped_orders': dict, 'sap_message': str}
     # result = select_rows_in_table("COHV", s_num, cohv_table_id, cohv_logic_factors, main_cohv_logic_function, RESULT_COL_NAMES, session)
-    result = select_rows_in_table("COHV", s_num, cohv_table_id, cohv_logic_factors, main_cohv_logic_function, RESULT_COL_NAMES)
+    result = select_rows_in_table(
+        "COHV",
+        s_num,
+        cohv_table_id,
+        cohv_logic_factors,
+        main_cohv_logic_function,
+        RESULT_COL_NAMES,
+    )
 
     # TODO: do the conversion if any order was selected
-    if len(result['selected_orders']) > 0:
+    if len(result["selected_orders"]) > 0:
         cohv_mass_processing(session, "210", False)
 
     # TODO: load transaction again
     open_one_transaction(session, transaction)
     time.sleep(1)
 
-    sap_result = (result['selected_orders'], result['skipped_orders'], result['sap_message'])
+    sap_result = (
+        result["selected_orders"],
+        result["skipped_orders"],
+        result["sap_message"],
+    )
     q.put((variant_name, sap_result))
+
+
+# A wrapper function that locks the session while processing
+def safe_select_and_convert(lock, queue, sess_num, variant):
+    with lock:
+        select_and_convert(queue, sess_num, "COHV", variant)
 
 
 def load_remaining_orders(session, variant_name, planned_orders):
@@ -168,18 +206,29 @@ def load_remaining_orders(session, variant_name, planned_orders):
     simple_load_variant(session, variant_name, True)
 
     # Clean the MRP disponents, and dates
-    session.findById("wnd[0]/usr/tabsTABSTRIP_SELBLOCK/tabpSEL_00/ssub%_SUBSCREEN_SELBLOCK:PPIO_ENTRY:1200/btn%_S_DISPO_%_APP_%-VALU_PUSH").press()
+    session.findById(
+        "wnd[0]/usr/tabsTABSTRIP_SELBLOCK/tabpSEL_00/ssub%_SUBSCREEN_SELBLOCK:PPIO_ENTRY:1200/btn%_S_DISPO_%_APP_%-VALU_PUSH"
+    ).press()
     session.findById("wnd[1]/tbar[0]/btn[16]").press()
     session.findById("wnd[1]/tbar[0]/btn[8]").press()
-    session.findById("wnd[0]/usr/tabsTABSTRIP_SELBLOCK/tabpSEL_00/ssub%_SUBSCREEN_SELBLOCK:PPIO_ENTRY:1200/btn%_S_TERST_%_APP_%-VALU_PUSH").press()
+    session.findById(
+        "wnd[0]/usr/tabsTABSTRIP_SELBLOCK/tabpSEL_00/ssub%_SUBSCREEN_SELBLOCK:PPIO_ENTRY:1200/btn%_S_TERST_%_APP_%-VALU_PUSH"
+    ).press()
     session.findById("wnd[1]/tbar[0]/btn[16]").press()
     session.findById("wnd[1]/tbar[0]/btn[8]").press()
-    session.findById("wnd[0]/usr/tabsTABSTRIP_SELBLOCK/tabpSEL_00/ssub%_SUBSCREEN_SELBLOCK:PPIO_ENTRY:1200/btn%_S_RTERST_%_APP_%-VALU_PUSH").press()
+    session.findById(
+        "wnd[0]/usr/tabsTABSTRIP_SELBLOCK/tabpSEL_00/ssub%_SUBSCREEN_SELBLOCK:PPIO_ENTRY:1200/btn%_S_RTERST_%_APP_%-VALU_PUSH"
+    ).press()
     session.findById("wnd[1]/tbar[0]/btn[16]").press()
     session.findById("wnd[1]/tbar[0]/btn[8]").press()
 
     # insert planned orders to variant
-    insert_production_orders(planned_orders, session, planned_orders_multiple_selection_button_id, insert_table_id)
+    insert_production_orders(
+        planned_orders,
+        session,
+        planned_orders_multiple_selection_button_id,
+        insert_table_id,
+    )
 
     # Load variant in
     session.findById("wnd[0]").sendVKey(8)
@@ -187,8 +236,10 @@ def load_remaining_orders(session, variant_name, planned_orders):
 
 if __name__ == "__main__":
     username = os.getlogin()
-    status_file = (f"C:/Users/{username}/OneDrive - Roto Frank DST/General/05_Automatyzacja_narzędzia/100_STATUS"
-                   f"/02_AUTOMATION_TOOLS_STATUS_BMH.xlsx")
+    status_file = (
+        f"C:/Users/{username}/OneDrive - Roto Frank DST/General/05_Automatyzacja_narzędzia/100_STATUS"
+        f"/02_AUTOMATION_TOOLS_STATUS_BMH.xlsx"
+    )
 
     today = datetime.today().strftime("%Y_%m_%d")
     start_time = datetime.now().strftime("%H:%M:%S")
@@ -232,22 +283,26 @@ if __name__ == "__main__":
         for sess in sessions:
             open_one_transaction(sess, "COHV")
 
-        # run cohv conversion concurrently
-        for variant, sess_num, tr in zip(VARIANT_NAMES, cycle(sess_nums), cycle(sess_transactions)):
-            process = multiprocessing.Process(
-                target=select_and_convert, args=(queue, sess_num, "COHV", variant)
+        # Create a lock per session
+        session_locks = [multiprocessing.Lock() for _ in sessions]
+
+        # Start processes
+        processes = []
+        for variant, sess_num, tr, lock in zip(
+            VARIANT_NAMES,
+            cycle(sess_nums),
+            cycle(sess_transactions),
+            cycle(session_locks),
+        ):
+            p = multiprocessing.Process(
+                target=safe_select_and_convert, args=(lock, queue, sess_num, variant)
             )
-            processes.append(process)
-            process.start()
+            processes.append(p)
+            p.start()
 
-        for process in processes:
-            process.join()
-
-        # simple_load_variant(sess1, VARIANT_NAME, False)
-        # result = select_rows_in_table("COHV", nu1, COHV_TABLE_ID, COHV_STOCK_COL_NAME, RESULT_COL_NAMES, sess1)
-
-        # do the conversion
-        # cohv_mass_processing(sess1, "210", False)
+        # Wait for all to finish
+        for p in processes:
+            p.join()
 
         result_converted_positions = {key: [] for key in RESULT_COL_NAMES}
         result_skipped_positions = {key: [] for key in RESULT_COL_NAMES}
@@ -264,19 +319,29 @@ if __name__ == "__main__":
 
         #  save results to file
         df_convrted = pd.DataFrame(result_converted_positions)
-        df_convrted.to_excel(paths['converted_positions'])
+        df_convrted.to_excel(paths["converted_positions"])
         df_skipped = pd.DataFrame(result_skipped_positions)
-        df_skipped.to_excel(paths['skipped_positions'])
+        df_skipped.to_excel(paths["skipped_positions"])
 
-        load_remaining_orders(session=sess3, variant_name=VARIANT_NAMES[0], planned_orders=df_skipped['AUFNR'].to_list())
+        load_remaining_orders(
+            session=sess3,
+            variant_name=VARIANT_NAMES[0],
+            planned_orders=df_skipped["AUFNR"].to_list(),
+        )
 
         # Handle the information for status file
-        total_gamng = int(pd.to_numeric(df_convrted['GAMNG'], errors='coerce').sum())
-        program_status['COHV_CONVERSION_SUMMARY'] = (f"In total {df_convrted.shape[0]} rows converted. Total sum of "
-                                                     f"converted items: {total_gamng}.")
-        program_status['COHV_CONVERTED_LINK'] = f"Details of converted items: {paths['converted_positions']}"
-        program_status['COHV_SKIPPED_LINK'] = f"Details of skipped items: {paths['skipped_positions']}"
-        program_status['COHV_CONVERSION_SYSTEM_MESSAGE'] = result_sap_messages
+        total_gamng = int(pd.to_numeric(df_convrted["GAMNG"], errors="coerce").sum())
+        program_status["COHV_CONVERSION_SUMMARY"] = (
+            f"In total {df_convrted.shape[0]} rows converted. Total sum of "
+            f"converted items: {total_gamng}."
+        )
+        program_status[
+            "COHV_CONVERTED_LINK"
+        ] = f"Details of converted items: {paths['converted_positions']}"
+        program_status[
+            "COHV_SKIPPED_LINK"
+        ] = f"Details of skipped items: {paths['skipped_positions']}"
+        program_status["COHV_CONVERSION_SYSTEM_MESSAGE"] = result_sap_messages
 
     except Exception as e:
         print(e)
@@ -285,6 +350,8 @@ if __name__ == "__main__":
     finally:
         # Fill status file
         end_time = datetime.now().strftime("%H:%M:%S")
-        program_status['start_time'] = start_time
-        program_status['end_time'] = end_time
-        append_status_to_excel(status_file, program_status, ERROR_LOG_PATH, sheet_name="COHV_CONVERSION")
+        program_status["start_time"] = start_time
+        program_status["end_time"] = end_time
+        append_status_to_excel(
+            status_file, program_status, ERROR_LOG_PATH, sheet_name="COHV_CONVERSION"
+        )
