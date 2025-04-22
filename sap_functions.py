@@ -292,3 +292,12 @@ def select_rows_in_table(transaction, num_of_window, table_id, cohv_logic_factor
     result['sap_message'] = sap_msg
 
     return result
+
+
+def sap_element_exists(session, element_id):
+    try:
+        session.FindById(element_id)
+        return True
+    except:
+        return False
+

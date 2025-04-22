@@ -11,15 +11,17 @@ from itertools import cycle
 import pandas as pd
 
 from sap_connection import get_last_session, get_client
-from sap_functions import open_one_transaction, simple_load_variant, select_rows_in_table
-from sap_transactions import cohv_mass_processing
+from sap_functions import open_one_transaction, simple_load_variant, select_rows_in_table, insert_production_orders, sap_element_exists
+from sap_transactions import cohv_mass_processing, partial_matching
 from other_functions import append_status_to_excel
 
-# TODO: Check if it works with more than three variants
+# TODO: Check if it works with more than three variants - tutaj jeszcze są błędy, sprawdzić
 # TODO: Check if it works when there is no data in some variant
 
 # VARIANT_NAMES = ["PLAUF_M_BESTAN", "ZZ_AUTO_PO1", "ZZ_AUTO_PO2", "ZZ_AUTO_PO3"]  # Change variants here if necessary
-VARIANT_NAMES = ["ZZ_AUTO_PO4", "ZZ_AUTO_PO5", "ZZ_AUTO_PO6"]  # Change variants here if necessary
+# VARIANT_NAMES = ["ZZ_AUTO_PO4", "ZZ_AUTO_PO5", "ZZ_AUTO_PO6", "ZZ_AUTO_PO7", "ZZ_AUTO_PO8"]  # Change variants here if necessary
+VARIANT_NAMES = ["ZZ_AUTO_PO4", "ZZ_AUTO_PO5", "ZZ_AUTO_PO7"]  # Change variants here if necessary
+# VARIANT_NAMES = ["ZZ_AUTO_PO7"]  # Change variants here if necessary
 
 BASE_PATH = Path(r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\04_COHV_MASS_CONVERSION")
 ERROR_LOG_PATH = BASE_PATH / "error.log"
@@ -119,6 +121,14 @@ def select_and_convert(q, s_num, transaction, variant_name):
     session = get_client(s_num, transaction)
     simple_load_variant(session, variant_name, False)
 
+    # Check if there is any data
+    pop_up_id = "wnd[1]/tbar[0]/btn[0]"
+    if sap_element_exists(session, pop_up_id):
+        session.findById(pop_up_id).press()
+        sap_result = (dict(), dict(), "There wasn't any data.")
+        q.put((variant_name, sap_result))
+        return
+
     cohv_logic_factors = {"LABST": is_zero, "GAMNG": is_one, "MATNR": is_configurated, "MATXT": is_9H,
                           "FEVOR": is_csr}
 
@@ -128,13 +138,51 @@ def select_and_convert(q, s_num, transaction, variant_name):
     # result = select_rows_in_table("COHV", s_num, cohv_table_id, cohv_logic_factors, main_cohv_logic_function, RESULT_COL_NAMES, session)
     result = select_rows_in_table("COHV", s_num, cohv_table_id, cohv_logic_factors, main_cohv_logic_function, RESULT_COL_NAMES)
 
-    # TODO: do the conversion
-    # cohv_mass_processing(session, "210", False)
+    # TODO: do the conversion if any order was selected
+    if len(result['selected_orders']) > 0:
+        cohv_mass_processing(session, "210", False)
 
     # TODO: load transaction again
-    # open_one_transaction(sess, transaction)
+    open_one_transaction(session, transaction)
+    time.sleep(1)
+
     sap_result = (result['selected_orders'], result['skipped_orders'], result['sap_message'])
     q.put((variant_name, sap_result))
+
+
+def load_remaining_orders(session, variant_name, planned_orders):
+    """
+    It loads in remaining orders to COHV.
+    :param planned_orders: list of planned orders to be loaded in
+    :param session: SAP session
+    :param variant_name: name of variant, only to get appropriate layout
+    :return:
+    """
+    if len(planned_orders) < 1:
+        return
+
+    insert_table_id = "wnd[1]/usr/tabsTAB_STRIP/tabpSIVA/ssubSCREEN_HEADER:SAPLALDB:3010/tblSAPLALDBSINGLE"
+    planned_orders_multiple_selection_button_id = "wnd[0]/usr/tabsTABSTRIP_SELBLOCK/tabpSEL_00/ssub%_SUBSCREEN_SELBLOCK:PPIO_ENTRY:1200/btn%_S_PLNUM_%_APP_%-VALU_PUSH"
+
+    open_one_transaction(session, "COHV")
+    simple_load_variant(session, variant_name, True)
+
+    # Clean the MRP disponents, and dates
+    session.findById("wnd[0]/usr/tabsTABSTRIP_SELBLOCK/tabpSEL_00/ssub%_SUBSCREEN_SELBLOCK:PPIO_ENTRY:1200/btn%_S_DISPO_%_APP_%-VALU_PUSH").press()
+    session.findById("wnd[1]/tbar[0]/btn[16]").press()
+    session.findById("wnd[1]/tbar[0]/btn[8]").press()
+    session.findById("wnd[0]/usr/tabsTABSTRIP_SELBLOCK/tabpSEL_00/ssub%_SUBSCREEN_SELBLOCK:PPIO_ENTRY:1200/btn%_S_TERST_%_APP_%-VALU_PUSH").press()
+    session.findById("wnd[1]/tbar[0]/btn[16]").press()
+    session.findById("wnd[1]/tbar[0]/btn[8]").press()
+    session.findById("wnd[0]/usr/tabsTABSTRIP_SELBLOCK/tabpSEL_00/ssub%_SUBSCREEN_SELBLOCK:PPIO_ENTRY:1200/btn%_S_RTERST_%_APP_%-VALU_PUSH").press()
+    session.findById("wnd[1]/tbar[0]/btn[16]").press()
+    session.findById("wnd[1]/tbar[0]/btn[8]").press()
+
+    # insert planned orders to variant
+    insert_production_orders(planned_orders, session, planned_orders_multiple_selection_button_id, insert_table_id)
+
+    # Load variant in
+    session.findById("wnd[0]").sendVKey(8)
 
 
 if __name__ == "__main__":
@@ -219,6 +267,8 @@ if __name__ == "__main__":
         df_convrted.to_excel(paths['converted_positions'])
         df_skipped = pd.DataFrame(result_skipped_positions)
         df_skipped.to_excel(paths['skipped_positions'])
+
+        load_remaining_orders(session=sess3, variant_name=VARIANT_NAMES[0], planned_orders=df_skipped['AUFNR'].to_list())
 
         # Handle the information for status file
         total_gamng = int(pd.to_numeric(df_convrted['GAMNG'], errors='coerce').sum())
