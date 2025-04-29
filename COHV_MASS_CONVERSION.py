@@ -16,22 +16,20 @@ from sap_functions import (
     simple_load_variant,
     select_rows_in_table,
     insert_production_orders,
-    sap_element_exists,
+    sap_element_exists, get_sap_message,
 )
 from sap_transactions import cohv_mass_processing, partial_matching
 from other_functions import append_status_to_excel
 
 
-# VARIANT_NAMES = ["PLAUF_M_BESTAN", "ZZ_AUTO_PO1", "ZZ_AUTO_PO2", "ZZ_AUTO_PO3"]  # Change variants here if necessary
+# Change variants here if necessary
 VARIANT_NAMES = [
     "ZZ_AUTO_PO8",
     "ZZ_AUTO_PO5",
     "ZZ_AUTO_PO6",
     "ZZ_AUTO_PO7",
     "ZZ_AUTO_PO4",
-]  # Change variants here if necessary
-# VARIANT_NAMES = ["ZZ_AUTO_PO4", "ZZ_AUTO_PO5", "ZZ_AUTO_PO7"]  # Change variants here if necessary
-# VARIANT_NAMES = ["ZZ_AUTO_PO7"]  # Change variants here if necessary
+]
 
 BASE_PATH = Path(
     r"P:\Technisch\PLANY PRODUKCJI\PLANIŚCI\PP_TOOLS_TEMP_FILES\04_COHV_MASS_CONVERSION"
@@ -169,6 +167,9 @@ def select_and_convert(q, s_num, transaction, variant_name):
     # TODO: do the conversion if any order was selected
     if len(result["selected_orders"]) > 0:
         cohv_mass_processing(session, "210", False)
+        sap_msg = get_sap_message(session)
+    else:
+        sap_msg = "Nothing was selected for conversion."
 
     # TODO: load transaction again
     open_one_transaction(session, transaction)
@@ -177,7 +178,7 @@ def select_and_convert(q, s_num, transaction, variant_name):
     sap_result = (
         result["selected_orders"],
         result["skipped_orders"],
-        result["sap_message"],
+        sap_msg,
     )
     q.put((variant_name, sap_result))
 

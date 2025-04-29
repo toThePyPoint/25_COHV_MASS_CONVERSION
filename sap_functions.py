@@ -286,10 +286,10 @@ def select_rows_in_table(transaction, num_of_window, table_id, cohv_logic_factor
     table.selectedRows = rows_to_select
 
     # Handle output information
-    sap_msg = get_sap_message(obj_sess)
+    # sap_msg = get_sap_message(obj_sess)
     result['selected_orders'] = selected_orders
     result['skipped_orders'] = skipped_orders
-    result['sap_message'] = sap_msg
+    # result['sap_message'] = sap_msg
 
     return result
 
